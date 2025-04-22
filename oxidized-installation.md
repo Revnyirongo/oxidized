@@ -77,7 +77,7 @@ services:
       - "traefik.http.routers.oxidized.entrypoints=websecure"
       - "traefik.http.routers.oxidized.tls.certresolver=myresolver"
       - "traefik.http.services.oxidized.loadbalancer.server.port=8888"
-      - "traefik.http.routers.oxidized-http.rule=Host(`oxid.ubuntunet.net`)"
+      - "traefik.http.routers.oxidized-http.rule=Host(`oxid.xxxx.net`)"
       - "traefik.http.routers.oxidized-http.entrypoints=web"
       - "traefik.http.routers.oxidized-http.middlewares=https-redirect"
       - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
@@ -103,14 +103,14 @@ services:
       - "--entrypoints.websecure.address=:443"
       - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
       - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
-      - "--certificatesresolvers.myresolver.acme.email=your@email.com"
+      - "--certificatesresolvers.myresolver.acme.email=devops@xxxx.com"
       - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
     restart: always
     networks:
       - web
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=Host(`traefik.oxid.ubuntunet.net`)"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.oxid.xxxxx.net`)"
       - "traefik.http.routers.dashboard.service=api@internal"
       - "traefik.http.routers.dashboard.entrypoints=websecure"
       - "traefik.http.routers.dashboard.tls.certresolver=myresolver"
@@ -254,7 +254,7 @@ If the web interface isn't working:
 1. Check if Oxidized is running: `docker-compose ps`
 2. Check if the web interface is accessible locally: `curl http://localhost:8888`
 3. Verify Traefik logs: `docker-compose logs traefik`
-4. Check DNS configuration: `dig oxid.ubuntunet.net`
+4. Check DNS configuration: `dig oxid.xxxx.net`
 
 ### SSL Certificate Issues
 
@@ -304,8 +304,8 @@ To use different credentials for different devices:
 2. Add content:
    ```yaml
    ---
-   username: admin      # Default username
-   password: admin      # Default password
+   username: xxx      # Default username
+   password: xxx      # Default password
    
    groups:
      routers:
