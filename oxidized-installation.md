@@ -27,8 +27,8 @@ This installation uses:
 #### Main Oxidized Configuration (`oxidized-config/config`)
 ```yaml
 ---
-username: admin
-password: admin
+username: xxxx
+password: xxxx
 model: ios
 interval: 3600
 debug: false
@@ -114,7 +114,7 @@ services:
       - "traefik.http.routers.dashboard.service=api@internal"
       - "traefik.http.routers.dashboard.entrypoints=websecure"
       - "traefik.http.routers.dashboard.tls.certresolver=myresolver"
-      - "traefik.http.middlewares.auth.basicauth.users=admin:$apr1$ruca84Hq$mbjdMZBAG.KWn7vfN/SNK/"
+      - "traefik.http.middlewares.auth.basicauth.users=xxxx:$apr1$ruca84Hq$mbjdMZBAG.KWn7vfN/SNK/"
 
 networks:
   web:
@@ -171,8 +171,8 @@ For a complete list, refer to the [Oxidized GitHub repository](https://github.co
 You can configure different authentication methods in the main config file:
 
 ```yaml
-username: admin
-password: admin
+username: xxxx
+password: xxxx
 
 # For SSH keys
 input:
@@ -309,10 +309,10 @@ To use different credentials for different devices:
    
    groups:
      routers:
-       username: router_admin
+       username: router_xxxx
        password: router_pass
      switches:
-       username: switch_admin
+       username: switch_xxxx
        password: switch_pass
    
    models:
@@ -339,18 +339,18 @@ To use different credentials for different devices:
    
    rest: "0.0.0.0:8888"
    
-   username: admin
-   password: admin
+   username: xxxx
+   password: xxxx
    
    vars_map:
      enable: enable
    
    groups:
      routers:
-       username: router_admin
+       username: router_xxxx
        password: router_pass
      switches:
-       username: switch_admin
+       username: switch_xxxx
        password: switch_pass
    
    models:
