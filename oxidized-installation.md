@@ -1,6 +1,6 @@
 # UbuntuNet Oxidized Installation Guide
 
-This document describes the exact Oxidized setup deployed at UbuntuNet, which differs significantly from other online tutorials. This installation uses **Docker Compose with Traefik** for SSL termination and reverse proxy.
+This document describes Oxidized setup deployed at UbuntuNet. This installation uses **Docker Compose with Traefik** for SSL termination and reverse proxy.
 
 ## Key Differences from Other Guides
 
