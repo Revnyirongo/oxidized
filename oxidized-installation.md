@@ -1,61 +1,109 @@
-# Oxidized with Traefik Documentation
+# UbuntuNet Oxidized Installation Guide
 
-This document provides a comprehensive guide for managing the Oxidized network configuration backup system with Traefik reverse proxy.
+This document describes the exact Oxidized setup deployed at UbuntuNet, which differs significantly from other online tutorials. This installation uses **Docker Compose with Traefik** for SSL termination and reverse proxy.
+
+## Key Differences from Other Guides
+
+| Aspect | Other Guides (e.g., apjone.uk) | UbuntuNet Setup |
+|--------|--------------------------------|-----------------|
+| **Installation Method** | Native Ruby installation | Docker Compose |
+| **Web Server** | Apache/Nginx | Traefik reverse proxy |
+| **SSL/TLS** | Manual certificate setup | Automatic Let's Encrypt |
+| **Configuration Location** | `/home/oxidized/.config/oxidized/` | `/root/oxidized-traefik/oxidized-config/` |
+| **Service Management** | systemd service | Docker containers |
+| **Database Storage** | SQLite in user home | File-based in mounted volume |
+| **Network Access** | Direct port access | Domain-based routing |
+| **Backup Strategy** | Manual file copying | Automated Docker volume backup |
 
 ## System Overview
 
-This installation uses:
-- **Oxidized**: Network device configuration backup tool
-- **Traefik**: Reverse proxy handling SSL termination and routing
-- **Docker & Docker Compose**: Container management
-
-## Installation Details
-
-### Directory Structure
 ```
-~/oxidized-traefik/
-├── docker-compose.yml         # Container configuration
-├── letsencrypt/               # SSL certificates
-└── oxidized-config/           # Oxidized configuration
-    ├── config                 # Main configuration file
-    ├── configs/               # Backed up device configurations
-    └── router.db              # Device inventory
+Internet → Traefik (SSL termination) → Oxidized Container
+                ↓
+        Let's Encrypt (automatic SSL)
+                ↓  
+        oxid.ubuntunet.net (public access)
 ```
 
-### Configuration Files
+## Installation Architecture
 
-#### Main Oxidized Configuration (`oxidized-config/config`)
-```yaml
----
-username: xxxx
-password: xxxx
-model: ios
-interval: 3600
-debug: false
-input:
-  default: ssh
-  ssh:
-    secure: false
-output:
-  default: file
-  file:
-    directory: "/home/oxidized/.config/oxidized/configs"
-source:
-  default: csv
-  csv:
-    file: "/home/oxidized/.config/oxidized/router.db"
-    delimiter: ":"
-    map:
-      name: 0
-      model: 1
-      group: 2
-rest: "0.0.0.0:8888"
+### **File Structure**
+```
+/root/oxidized-traefik/                           # Main project directory
+├── docker-compose.yml                           # Container orchestration
+├── oxidized-config/                             # Oxidized configuration
+│   ├── config                                   # Main Oxidized config file
+│   ├── router.db                                # Device inventory (CSV format)
+│   ├── configs/                                 # Device backup storage
+│   │   ├── device1.cfg                         # Individual device configs
+│   │   └── device2.cfg
+│   ├── logs/                                    # Application logs
+│   └── pid                                      # Process ID file
+└── letsencrypt/                                 # SSL certificate storage
+    └── acme.json                                # Let's Encrypt certificates
 ```
 
-#### Docker Compose Configuration (`docker-compose.yml`)
+### **Network Architecture**
+```
+traefik-network (Docker network)
+├── traefik container (reverse proxy)
+└── oxidized container (application)
+```
+
+## Complete Installation Procedure
+
+### **Prerequisites**
+- Ubuntu 20.04+ server
+- Root access
+- Domain name pointing to server IP
+- Ports 80, 443, 8080 open
+
+### **Step 1: Install Docker and Docker Compose**
+
+```bash
+# Update system
+sudo apt update
+
+# Install Docker dependencies
+sudo apt install -y ca-certificates curl gnupg lsb-release
+
+# Add Docker GPG key
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+# Add Docker repository
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Install Docker
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Install standalone docker-compose
+sudo apt install docker-compose
+
+# Verify installation
+docker --version
+docker-compose --version
+```
+
+### **Step 2: Create Project Structure**
+
+```bash
+# Create main directory
+mkdir -p /root/oxidized-traefik
+cd /root/oxidized-traefik
+
+# Create subdirectories
+mkdir -p oxidized-config/configs
+mkdir -p letsencrypt
+```
+
+### **Step 3: Create Docker Compose Configuration**
+
+Create `/root/oxidized-traefik/docker-compose.yml`:
+
 ```yaml
 version: '3'
-
 services:
   oxidized:
     image: oxidized/oxidized:latest
@@ -77,7 +125,9 @@ services:
       - "traefik.http.routers.oxidized.entrypoints=websecure"
       - "traefik.http.routers.oxidized.tls.certresolver=myresolver"
       - "traefik.http.services.oxidized.loadbalancer.server.port=8888"
-      - "traefik.http.routers.oxidized-http.rule=Host(`oxid.xxxx.net`)"
+      # Remove the following line to allow public access
+      # - "traefik.http.routers.oxidized.middlewares=ipwhitelist@docker"
+      - "traefik.http.routers.oxidized-http.rule=Host(`oxid.ubuntunet.net`)"
       - "traefik.http.routers.oxidized-http.entrypoints=web"
       - "traefik.http.routers.oxidized-http.middlewares=https-redirect"
       - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
@@ -103,264 +153,410 @@ services:
       - "--entrypoints.websecure.address=:443"
       - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
       - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
-      - "--certificatesresolvers.myresolver.acme.email=devops@xxxx.com"
+      - "--certificatesresolvers.myresolver.acme.email=revelation.nyirongo@ubuntunet.net"
       - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
     restart: always
     networks:
       - web
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=Host(`traefik.oxid.xxxxx.net`)"
+      # IP whitelist for specific networks (modify as needed)
+      - "traefik.http.middlewares.ipwhitelist.ipwhitelist.sourcerange=197.239.12.189/32,196.32.208.0/21,41.70.13.32/32,41.210.154.130/32,197.239.0.0/24"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.oxid.ubuntunet.net`)"
       - "traefik.http.routers.dashboard.service=api@internal"
       - "traefik.http.routers.dashboard.entrypoints=websecure"
       - "traefik.http.routers.dashboard.tls.certresolver=myresolver"
-      - "traefik.http.middlewares.auth.basicauth.users=xxxx:$apr1$ruca84Hq$mbjdMZBAG.KWn7vfN/SNK/"
+      - "traefik.http.routers.dashboard.middlewares=ipwhitelist@docker"
 
 networks:
   web:
     name: traefik-network
 ```
 
-## Managing Network Devices
+### **Step 4: Create Oxidized Configuration**
 
-### Adding Devices
-
-To add network devices for backup:
-
-1. Edit the router.db file:
-   ```bash
-   nano ~/oxidized-traefik/oxidized-config/router.db
-   ```
-
-2. Add entries in the format: `hostname_or_ip:device_model:group`
-   
-   Example:
-   ```
-   192.168.1.1:ios:routers
-   10.0.0.1:junos:switches
-   172.16.0.1:procurve:datacenter
-   ```
-
-3. Update the credentials in the main config file if necessary:
-   ```bash
-   nano ~/oxidized-traefik/oxidized-config/config
-   ```
-
-4. Force Oxidized to reload its configuration:
-   ```bash
-   docker exec -it oxidized kill -HUP 1
-   ```
-
-### Supported Device Models
-
-Oxidized supports many device types including:
-- `ios`: Cisco IOS
-- `iosxr`: Cisco IOS XR
-- `junos`: Juniper JunOS
-- `eos`: Arista EOS
-- `routeros`: MikroTik RouterOS
-- `procurve`: HP ProCurve
-- `fortigate`: Fortinet FortiOS
-- `asr`: Cisco ASR
-- `panos`: Palo Alto Networks PAN-OS
-
-For a complete list, refer to the [Oxidized GitHub repository](https://github.com/ytti/oxidized/tree/master/lib/oxidized/model).
-
-### Authentication Methods
-
-You can configure different authentication methods in the main config file:
+Create `/root/oxidized-traefik/oxidized-config/config`:
 
 ```yaml
-username: xxxx
-password: xxxx
-
-# For SSH keys
+---
+username: admin
+password: admin
+model: ios
+interval: 3600
+debug: false
 input:
   default: ssh
   ssh:
     secure: false
-    keys: /home/oxidized/.ssh/id_rsa
+output:
+  default: file
+  file:
+    directory: "/home/oxidized/.config/oxidized/configs"
+source:
+  default: csv
+  csv:
+    file: "/home/oxidized/.config/oxidized/router.db"
+    delimiter: ":"
+    map:
+      name: 0
+      model: 1
+      group: 2
+rest: "0.0.0.0:8888"
 ```
 
-## System Maintenance
+### **Step 5: Create Device Inventory**
 
-### Viewing Logs
+Create `/root/oxidized-traefik/oxidized-config/router.db`:
+
+```
+# Format: hostname:model:group
+# Examples:
+router1.ubuntunet.net:ios:core
+switch1.ubuntunet.net:ios:access
+firewall1.ubuntunet.net:junos:security
+196.32.211.235:ios:network
+```
+
+### **Step 6: Set Permissions**
 
 ```bash
-# Oxidized logs
+# Set correct ownership for Oxidized container
+sudo chown -R 30000:30000 /root/oxidized-traefik/oxidized-config/
+```
+
+### **Step 7: Deploy Services**
+
+```bash
+# Navigate to project directory
+cd /root/oxidized-traefik
+
+# Start services
+docker-compose up -d
+
+# Verify containers are running
+docker-compose ps
+
+# Check logs
+docker-compose logs traefik
+docker-compose logs oxidized
+```
+
+## Configuration Details
+
+### **Oxidized Configuration Specifics**
+
+#### **Authentication**
+- **Global credentials**: Set in `/root/oxidized-traefik/oxidized-config/config`
+- **Username**: `admin` (default)
+- **Password**: `admin` (default)
+- **Per-device credentials**: Not used in this setup
+
+#### **Device Inventory Format**
+```
+# File: /root/oxidized-traefik/oxidized-config/router.db
+# Format: name:model:group
+device.example.com:ios:production
+192.168.1.1:junos:core
+switch.local:ios:access
+```
+
+#### **Output Configuration**
+- **Type**: File-based storage
+- **Location**: `/root/oxidized-traefik/oxidized-config/configs/`
+- **Format**: Individual `.cfg` files per device
+
+#### **Web Interface**
+- **Internal port**: 8888 (container)
+- **External access**: Via Traefik reverse proxy
+- **Public URL**: `https://oxid.ubuntunet.net`
+- **SSL**: Automatic Let's Encrypt certificates
+
+### **Traefik Configuration Specifics**
+
+#### **Routing Rules**
+```yaml
+# HTTPS access
+traefik.http.routers.oxidized.rule=Host(`oxid.ubuntunet.net`)
+
+# HTTP to HTTPS redirect
+traefik.http.routers.oxidized-http.middlewares=https-redirect
+```
+
+#### **SSL Certificates**
+- **Provider**: Let's Encrypt
+- **Challenge**: HTTP-01
+- **Storage**: `/root/oxidized-traefik/letsencrypt/acme.json`
+- **Email**: `revelation.nyirongo@ubuntunet.net`
+
+#### **Access Control**
+```yaml
+# IP whitelist (optional)
+traefik.http.middlewares.ipwhitelist.ipwhitelist.sourcerange=197.239.12.189/32,196.32.208.0/21,41.70.13.32/32,41.210.154.130/32,197.239.0.0/24
+```
+
+## Device Management
+
+### **Adding New Devices**
+
+#### **Method 1: Edit router.db directly**
+```bash
+# Add device to inventory
+echo "newdevice.example.com:ios:production" >> /root/oxidized-traefik/oxidized-config/router.db
+
+# Restart Oxidized to pick up changes
+cd /root/oxidized-traefik
+docker-compose restart oxidized
+```
+
+#### **Method 2: Via Web Interface**
+1. Navigate to `https://oxid.ubuntunet.net`
+2. Click "Add Node"
+3. Fill in device details:
+   - **Name**: Device hostname or IP
+   - **Model**: Device type (ios, junos, etc.)
+   - **Group**: Logical grouping
+4. Save configuration
+
+#### **Method 3: Via API**
+```bash
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"name":"device.example.com","model":"ios","group":"production"}' \
+  https://oxid.ubuntunet.net/node/create
+```
+
+### **Supported Device Models**
+- **ios**: Cisco IOS devices
+- **junos**: Juniper devices  
+- **eos**: Arista devices
+- **nxos**: Cisco Nexus devices
+- **iosxr**: Cisco IOS-XR devices
+
+### **Device Authentication**
+The system uses global authentication configured in the main config file. Per-device authentication is not implemented in this setup.
+
+## Operational Procedures
+
+### **Service Management**
+
+```bash
+# Start services
+cd /root/oxidized-traefik
+docker-compose up -d
+
+# Stop services
+docker-compose down
+
+# Restart specific service
+docker-compose restart oxidized
+docker-compose restart traefik
+
+# View logs
 docker-compose logs -f oxidized
-
-# Traefik logs
 docker-compose logs -f traefik
+
+# Check service status
+docker-compose ps
 ```
 
-### Updating the System
+### **Configuration Updates**
 
+#### **Updating Oxidized Configuration**
 ```bash
-# Pull the latest images
-docker-compose pull
+# Edit main config
+nano /root/oxidized-traefik/oxidized-config/config
 
-# Restart the services
+# Restart Oxidized to apply changes
+cd /root/oxidized-traefik
+docker-compose restart oxidized
+```
+
+#### **Updating Device List**
+```bash
+# Edit device inventory
+nano /root/oxidized-traefik/oxidized-config/router.db
+
+# Restart Oxidized to pick up changes
+cd /root/oxidized-traefik
+docker-compose restart oxidized
+```
+
+#### **Updating Docker Configuration**
+```bash
+# Edit Docker Compose file
+nano /root/oxidized-traefik/docker-compose.yml
+
+# Recreate containers with new configuration
+cd /root/oxidized-traefik
 docker-compose down
 docker-compose up -d
 ```
 
-### Backing Up Configuration
+### **Monitoring and Troubleshooting**
 
-It's recommended to back up your configuration files regularly:
-
+#### **Check System Status**
 ```bash
-# Create a backup
-tar -czf oxidized-backup-$(date +%Y%m%d).tar.gz ~/oxidized-traefik/oxidized-config ~/oxidized-traefik/docker-compose.yml
+# Container status
+docker-compose ps
+
+# Resource usage
+docker stats
+
+# Network connectivity
+docker network ls
+docker network inspect traefik-network
 ```
 
-## Firewall Configuration (UFW)
+#### **View Device Configurations**
+```bash
+# List backed up devices
+ls -la /root/oxidized-traefik/oxidized-config/configs/
 
-Docker manages its own iptables rules, which can bypass UFW. For proper security:
+# View specific device config
+cat /root/oxidized-traefik/oxidized-config/configs/device.example.com
+```
 
-1. Allow only necessary ports through UFW:
-   ```bash
-   sudo ufw allow 80/tcp   # HTTP for Let's Encrypt challenges
-   sudo ufw allow 443/tcp  # HTTPS for web interface
-   ```
+#### **Common Issues and Solutions**
 
-2. Block Docker from setting iptables rules that bypass UFW by editing `/etc/docker/daemon.json`:
-   ```json
-   {
-     "iptables": false
-   }
-   ```
+| Issue | Symptoms | Solution |
+|-------|----------|----------|
+| **SSL Certificate Issues** | Browser warnings, HTTPS not working | Check Let's Encrypt logs, verify domain DNS |
+| **Device Not Backing Up** | Missing config files | Verify device connectivity, check SSH credentials |
+| **Web Interface Not Accessible** | Connection refused | Check Traefik routing, verify domain configuration |
+| **Permission Errors** | Container startup failures | Run `sudo chown -R 30000:30000 /root/oxidized-traefik/oxidized-config/` |
 
-3. Restart Docker:
-   ```bash
-   sudo systemctl restart docker
-   ```
+#### **Log Analysis**
+```bash
+# Oxidized application logs
+docker-compose logs oxidized | grep ERROR
 
-With this setup, all Docker container ports will be properly controlled by UFW.
+# Traefik routing logs  
+docker-compose logs traefik | grep oxid.ubuntunet.net
 
-## Troubleshooting
+# System logs for Docker
+journalctl -u docker.service
 
-### Connection Issues
+# Container inspection
+docker inspect oxidized
+docker inspect traefik
+```
 
-If devices aren't connecting:
-1. Check network connectivity: `ping device_ip`
-2. Verify credentials in the config file
-3. Make sure the device model is supported
-4. Check Oxidized logs: `docker-compose logs oxidized`
+## Backup and Recovery
 
-### Web Interface Issues
+### **Automated Backup Setup**
 
-If the web interface isn't working:
-1. Check if Oxidized is running: `docker-compose ps`
-2. Check if the web interface is accessible locally: `curl http://localhost:8888`
-3. Verify Traefik logs: `docker-compose logs traefik`
-4. Check DNS configuration: `dig oxid.xxxx.net`
+Create backup script at `/root/scripts/oxidized-backup.sh`:
 
-### SSL Certificate Issues
+```bash
+#!/bin/bash
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/root/backups/oxidized"
+mkdir -p "$BACKUP_DIR"
 
-If SSL certificates aren't working:
-1. Make sure ports 80 and 443 are accessible from the internet
-2. Check Traefik logs for certificate issuance errors
-3. Verify the acme.json file: `docker exec -it traefik cat /letsencrypt/acme.json`
+# Create backup
+tar -czf "$BACKUP_DIR/oxidized-backup-$DATE.tar.gz" -C /root oxidized-traefik/
+
+# Log backup
+echo "$(date) - Backup created: oxidized-backup-$DATE.tar.gz" >> /var/log/oxidized-backup.log
+
+# Cleanup old backups (keep 30 days)
+find "$BACKUP_DIR" -name "oxidized-backup-*.tar.gz" -mtime +30 -delete
+```
+
+Set up daily backups:
+```bash
+# Make script executable
+chmod +x /root/scripts/oxidized-backup.sh
+
+# Add to crontab (daily at 2 AM)
+(crontab -l 2>/dev/null; echo "0 2 * * * /root/scripts/oxidized-backup.sh") | crontab -
+```
+
+### **Recovery Procedure**
+
+```bash
+# Stop current services
+cd /root/oxidized-traefik
+docker-compose down
+
+# Backup current state
+mv /root/oxidized-traefik /root/oxidized-traefik-backup-$(date +%Y%m%d)
+
+# Restore from backup
+cd /root
+tar -xzf /root/backups/oxidized/oxidized-backup-TIMESTAMP.tar.gz
+
+# Set permissions
+sudo chown -R 30000:30000 /root/oxidized-traefik/oxidized-config/
+
+# Start services
+cd /root/oxidized-traefik
+docker-compose up -d
+```
 
 ## Security Considerations
 
-For production use, consider:
-1. Removing the Traefik dashboard or securing it properly
-2. Using environment variables for sensitive information
-3. Implementing proper authentication for the Oxidized web interface
-4. Restricting network access to management interfaces
+### **Access Control**
+- **Web Interface**: Accessible via domain name only
+- **IP Restrictions**: Configurable via Traefik middleware
+- **SSL/TLS**: Enforced for all connections
+- **Container Isolation**: Services run in isolated Docker network
 
-## Advanced Configuration
+### **Network Security**
+```yaml
+# Restrict access to specific IP ranges
+traefik.http.middlewares.ipwhitelist.ipwhitelist.sourcerange=YOUR_IP_RANGES
+```
 
-### Using Git for Configuration Storage
+### **Authentication**
+Currently uses basic authentication configured in Oxidized. For enhanced security, consider:
+- Implementing Traefik basic auth middleware
+- Integrating with external authentication systems
+- Using SSH key-based device authentication
 
-To store configurations in Git instead of files:
+## Maintenance
 
-1. Edit the main config file:
-   ```yaml
-   output:
-     default: git
-     git:
-       user: oxidized
-       email: oxidized@example.com
-       repo: /home/oxidized/.config/oxidized/configs.git
-   ```
+### **Regular Maintenance Tasks**
 
-2. Initialize the Git repository:
-   ```bash
-   docker exec -it oxidized bash -c "mkdir -p /home/oxidized/.config/oxidized/configs.git && cd /home/oxidized/.config/oxidized/configs.git && git init --bare"
-   ```
+#### **Weekly**
+- Review backup logs
+- Check SSL certificate status
+- Monitor disk usage in `/root/oxidized-traefik/oxidized-config/configs/`
 
-### Custom User Credentials
+#### **Monthly**
+- Update Docker images
+- Review device connectivity
+- Clean up old logs
 
-To use different credentials for different devices:
+#### **Update Procedure**
+```bash
+# Pull latest images
+cd /root/oxidized-traefik
+docker-compose pull
 
-1. Create a users.yml file:
-   ```bash
-   nano ~/oxidized-traefik/oxidized-config/users.yml
-   ```
+# Recreate containers with updated images
+docker-compose down
+docker-compose up -d
 
-2. Add content:
-   ```yaml
-   ---
-   username: xxx      # Default username
-   password: xxx      # Default password
-   
-   groups:
-     routers:
-       username: router_xxxx
-       password: router_pass
-     switches:
-       username: switch_xxxx
-       password: switch_pass
-   
-   models:
-     junos:
-       username: juniper_user
-       password: juniper_pass
-   ```
+# Verify services are working
+docker-compose ps
+```
 
-3. Update the main config to reference this file:
-   ```yaml
-   source:
-     default: csv
-     csv:
-       file: "/home/oxidized/.config/oxidized/router.db"
-       delimiter: ":"
-       map:
-         name: 0
-         model: 1
-         group: 2
-   
-   model_map:
-     juniper: junos
-     cisco: ios
-   
-   rest: "0.0.0.0:8888"
-   
-   username: xxxx
-   password: xxxx
-   
-   vars_map:
-     enable: enable
-   
-   groups:
-     routers:
-       username: router_xxxx
-       password: router_pass
-     switches:
-       username: switch_xxxx
-       password: switch_pass
-   
-   models:
-     junos:
-       username: juniper_user
-       password: juniper_pass
-   ```
+## Support and Documentation
 
-## Additional Resources
+### **Web Interfaces**
+- **Oxidized**: `https://oxid.ubuntunet.net`
+- **Traefik Dashboard**: `https://traefik.oxid.ubuntunet.net` (IP restricted)
 
-- [Oxidized Documentation](https://github.com/ytti/oxidized/tree/master/docs)
-- [Traefik Documentation](https://doc.traefik.io/traefik/)
-- [Docker Compose Documentation](https://docs.docker.com/compose/)
+### **Configuration Files Reference**
+- **Main Config**: `/root/oxidized-traefik/docker-compose.yml`
+- **Oxidized Config**: `/root/oxidized-traefik/oxidized-config/config`
+- **Device List**: `/root/oxidized-traefik/oxidized-config/router.db`
+- **Device Configs**: `/root/oxidized-traefik/oxidized-config/configs/`
+
+### **Port Reference**
+- **80**: HTTP (redirects to HTTPS)
+- **443**: HTTPS (Oxidized web interface)
+- **8080**: Traefik dashboard
+- **8888**: Oxidized internal port (not directly accessible)
+
+This documentation reflects the actual UbuntuNet Oxidized deployment and should be used instead of generic online tutorials when working with this specific installation.
