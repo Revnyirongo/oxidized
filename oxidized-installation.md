@@ -558,5 +558,3 @@ docker-compose ps
 - **443**: HTTPS (Oxidized web interface)
 - **8080**: Traefik dashboard
 - **8888**: Oxidized internal port (not directly accessible)
-
-This documentation reflects the actual UbuntuNet Oxidized deployment and should be used instead of generic online tutorials when working with this specific installation.
